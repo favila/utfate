@@ -21,14 +21,6 @@ utfate.SFCCA = /** @type {function(!Uint8Array): string} */
 
 
 /**
- * @param {string} errormsg
- */
-utfate.throwRangeError = function(errormsg) {
-  throw new RangeError(errormsg);
-};
-
-
-/**
  * @param {number} index
  * @param {number} bytes
  * @param {number=} opt_needed
@@ -76,7 +68,7 @@ utfate.UTF8MagicSubtraction = [0, 0x00003080, 0x000E2080, 0x03C82080];
  * @param {number} hi
  * @return {boolean}
  */
-utfate.inRange = function(c,  lo,  hi) { return ((c - lo) < (hi - lo + 1)); };
+utfate.inRange = function(c,  lo,  hi) { return ((lo <= c) && (c <= hi)); };
 
 
 /**
@@ -128,9 +120,23 @@ utfate.UTF8TailLen = function(c) {
 };
 
 
-//BROKEN
-// Test with http://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-demo.txt
-// http://floodyberry.wordpress.com/2007/04/14/utf-8-conversion-tricks/
+/**
+ * @param {number} c
+ * @return {number}
+ */
+utfate.UTF8InvalidTailBits = function(c) {
+  switch (c >> 6) {
+    case 0: case 1:
+      return 1;
+    case 2:
+      return 0;
+    case 3:
+      return 1;
+  }
+};
+
+
+// Many tricks taken from http://floodyberry.wordpress.com/2007/04/14/utf-8-conversion-tricks/
 /**
  * Decode UTF-8 bytes to a string.
  *
@@ -156,36 +162,35 @@ utfate.decode = function(ib, opt_start, opt_end) {
     if (ascii_start < i) {
       out += utfate.SFCCA(ib.subarray(ascii_start, i));
     }
-    ascii_start = i;
 
     tail = utfate.UTF8TailLen(ibi);
+
     if (tail >= end - i) {
       utfate.throwDecodeError(i, ibi, tail);
     }
 
-    mask = 0;
+    mask = 0, c = ibi;
     switch (tail) {
       case 3:
-        c = (c + ibi) << 6;
         ibi = ib[++i];
-        // same as (mask << 1) | utfate.UTF8InvalidTailBits[ibi >> 6];
-        mask = (mask << 1) | ((0xb >> (ibi >> 6)) & 1);
+        c = (c << 6) + ibi;
+        mask = utfate.UTF8InvalidTailBits(ibi);
       case 2:
-        c = (c + ibi) << 6;
         ibi = ib[++i];
-        mask = (mask << 1) | ((0xb >> (ibi >> 6)) & 1);
+        c = (c << 6) + ibi;
+        mask = (mask << 1) | utfate.UTF8InvalidTailBits(ibi);
       case 1:
-        c = (c + ibi) << 6;
         ibi = ib[++i];
-        mask = (mask << 1) | ((0xb >> (ibi >> 6)) & 1);
+        c = (c << 6) + ibi;
+        mask = (mask << 1) | utfate.UTF8InvalidTailBits(ibi);
       case 0:
-        c += ibi;
-        ++i;
+        ascii_start = ++i;
         break;
       case -1:
         utfate.throwDecodeError(i, c);
         break;
     }
+
     if (mask) {
       utfate.throwDecodeError(i - utfate.UTF8InvalidOffset[mask],
           ib[i - utfate.UTF8InvalidOffset[mask]]);
@@ -197,6 +202,7 @@ utfate.decode = function(ib, opt_start, opt_end) {
         utfate.isOutOfRange(c)) {
       utfate.throwDecodeError(i - tail, ib[i - tail]);
     }
+
     if (tail === 3) {
       c -= 0x10000;
       out += utfate.SFCC(0xD800 | (c >> 10), 0xDC00 | (c & 0x3FF));
@@ -221,13 +227,13 @@ utfate.EncodeResult;
  * @param {utfate.ENCODINGERRORS} error
  * @return {utfate.EncodeResult}
  */
-utfate.encode_result = function(chars, bytes, error) {
+utfate.encodeResult = function(chars, bytes, error) {
   return {'chars': chars, 'bytes': bytes, 'error': error};
 };
 
 
 /**
- * Encode a string as UTF8 in supplied byte buffer.
+ * Encode a string as UTF8 into supplied byte buffer.
  *
  * @param {string} string
  * @param {!Uint8Array} out
@@ -237,7 +243,8 @@ utfate.encode_result = function(chars, bytes, error) {
  * @param {number=} opt_endbyte
  * @return {!utfate.EncodeResult} chars and bytes written
  */
-utfate.encode = function(string, out, opt_startchar, opt_endchar, opt_startbyte, opt_endbyte) {
+utfate.encodeInto = function(string, out, opt_startchar, opt_endchar,
+                              opt_startbyte, opt_endbyte) {
   var i = opt_startchar || 0,
       end = opt_endchar || string.length,
       bytei = opt_startbyte || 0,
@@ -250,7 +257,7 @@ utfate.encode = function(string, out, opt_startchar, opt_endchar, opt_startbyte,
     if (c < 0x80) {
       // Ascii fast-path
       if (byteend <= bytei) {
-        return utfate.encode_result(i, bytei, utfate.ENCODINGERRORS.OUTBUF_END);
+        return utfate.encodeResult(i, bytei, utfate.ENCODINGERRORS.OUTBUF_END);
       }
       out[bytei++] = c;
       ++i;
@@ -268,16 +275,16 @@ utfate.encode = function(string, out, opt_startchar, opt_endchar, opt_startbyte,
     }
     bytei += bytesneeded;
     if (bytei > byteend) {
-      return utfate.encode_result(i, bytei - bytesneeded,
-                                  utfate.ENCODINGERRORS.OUTBUF_END);
+      return utfate.encodeResult(i, bytei - bytesneeded,
+                                 utfate.ENCODINGERRORS.OUTBUF_END);
     }
     switch (bytesneeded) {
       case 4:
         // Convert to UTF32 because we need to add 0x10000 to the code point.
         c1 = CCA(++i);
         if ((c1 & 0xFC00) !== 0xDC00) {
-          return utfate.encode_result(i - 1, bytei - bytesneeded,
-                                      utfate.ENCODINGERRORS.ORPHAN_LSUR);
+          return utfate.encodeResult(i - 1, bytei - bytesneeded,
+                                     utfate.ENCODINGERRORS.ORPHAN_LSUR);
         }
         c = (((c & 0x3FF) << 10) | (c1 & 0x3FF)) + 0x10000;
         out[--bytei] = 0x80 | (c & 0x3F);
@@ -296,14 +303,75 @@ utfate.encode = function(string, out, opt_startchar, opt_endchar, opt_startbyte,
         ++i;
         break;
       case 0:
-        return utfate.encode_result(i, bytei,
-                                    utfate.ENCODINGERRORS.ORPHAN_TSUR);
+        return utfate.encodeResult(i, bytei,
+                                   utfate.ENCODINGERRORS.ORPHAN_TSUR);
     }
   }
-  return utfate.encode_result(i, bytei, utfate.ENCODINGERRORS.NONE);
+  return utfate.encodeResult(i, bytei, utfate.ENCODINGERRORS.NONE);
 };
 
-window['encode'] = utfate.encode;
-window['decode'] = utfate.decode;
+
+/**
+ * Number of bytes of UTF8 needed to encode a character.
+ * @param {number} c charCode value of character.
+ * @return {number} Number of utf8 bytes needed to encode; 0 if invalid.
+ */
+utfate.charUTF8ByteLength = function(c) {
+  if (c < 0x80) {
+    return 1;
+  }
+  if (c < 0x800) {
+    return 2;
+  }
+  if (c < 0xD800) {
+    return 3;
+  }
+  if (c < 0xDC00) {
+    return 4;
+  }
+  if (c < 0xE000) {
+    return 0;
+  }
+  return 3;
+};
+
+
+/**
+ * Number of bytes of UTF8 needed to encode a string.
+ * Does not check string for validity. May overestimate required number of
+ * bytes if string is invalid.
+ *
+ * @param {string} s
+ * @return {number} Number of utf8 bytes needed to encode string fully.
+ */
+utfate.byteLength = function(s) {
+  var i = 0, slen = s.length, nbytes = 0;
+  while (i < slen) {
+    nbytes += utfate.charUTF8ByteLength(s.charCodeAt(i));
+    ++i;
+  }
+  return nbytes;
+};
+
+
+/**
+ * Encode string fully into a new Uint8Array as UTF8.
+ * May throw an Error if string is invalid UTF-16 and cannot be encoded.
+ * Use encode-into if you want to partially encode or want to provide an out
+ * buffer.
+ *
+ * @param {string} s
+ * @return {!Uint8Array} string encoded in UTF8.
+ */
+utfate.encode = function(s) {
+  var out = new Uint8Array(utfate.byteLength(s)),
+      result = utfate.encodeInto(s, out);
+  if (result.error) {
+    throw new Error('Cannot encode: invalid UTF-16 in input string near ' +
+                    'string index ' + result.chars);
+  }
+  return out;
+};
+
 
 });  // goog.scope
