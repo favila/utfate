@@ -47,10 +47,6 @@ utfate.ENCODINGERRORS = {
 
 
 /** @type {!Array.<number>} */
-utfate.UTF8InvalidTailBits = [1, 1, 0, 1];
-
-
-/** @type {!Array.<number>} */
 utfate.UTF8InvalidOffset = [0, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4];
 
 
