@@ -450,5 +450,51 @@ utfate.encode = function(s) {
   return out;
 };
 
+/**
+ * @param {string} s
+ * @return {!Uint8Array}
+ */
+utfate.encodeSimple = function(s) {
+  var out = new Uint8Array(utfate.byteLength(s)),
+  CCA = String.prototype.charCodeAt.bind(s),
+  p = 0, slen = s.length | 0;
+  for (var i = 0; i < slen; ++i) {
+    var c = CCA(i) | 0;
+    if (c < 128) {
+      out[p++] = c;
+    } else if (c < 2048) {
+      out[p++] = (c >> 6) | 192;
+      out[p++] = (c & 63) | 128;
+    } else {
+      out[p++] = (c >> 12) | 224;
+      out[p++] = ((c >> 6) & 63) | 128;
+      out[p++] = (c & 63) | 128;
+    }
+  }
+  return out;
+};
+
+/**
+ * Converts a UTF-8 byte array to JavaScript's 16-bit Unicode.
+ * @param {Uint8Array|Int8Array|Array.<number>} bytes UTF-8 byte array.
+ * @return {string} 16-bit Unicode string.
+ */
+utfate.decodeSimple = function(bytes) {
+  var out = '', pos = 0, blen = bytes.length | 0;
+  while (pos < blen) {
+    var c1 = bytes[pos++];
+    if (c1 < 128) {
+      out += utfate.SFCC(c1);
+    } else if (c1 > 191 && c1 < 224) {
+      var c2 = bytes[pos++];
+      out += utfate.SFCC((c1 & 31) << 6 | c2 & 63);
+    } else {
+      var c2 = bytes[pos++];
+      var c3 = bytes[pos++];
+      out += utfate.SFCC((c1 & 15) << 12 | (c2 & 63) << 6 | c3 & 63);
+    }
+  }
+  return out;
+};
 
 });  // goog.scope
