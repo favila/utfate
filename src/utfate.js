@@ -322,10 +322,10 @@ utfate.encodeResult = function(chars, bytes, error) {
  */
 utfate.encodeInto = function(string, out, opt_startchar, opt_endchar,
                               opt_startbyte, opt_endbyte) {
-  var i = opt_startchar || 0,
-      end = opt_endchar || string.length,
-      bytei = opt_startbyte || 0,
-      byteend = opt_endbyte || out.length,
+  var i = opt_startchar | 0,
+      end = (opt_endchar || string.length) | 0,
+      bytei = opt_startbyte | 0,
+      byteend = (opt_endbyte || out.length) | 0,
       bytesneeded = 0,
       c = 0, c1 = 0,
       CCA = String.prototype.charCodeAt.bind(string);
@@ -363,7 +363,7 @@ utfate.encodeInto = function(string, out, opt_startchar, opt_endchar,
           return utfate.encodeResult(i - 1, bytei - bytesneeded,
                                      utfate.ENCODINGERRORS.ORPHAN_LSUR);
         }
-        c = (((c & 0x3FF) << 10) | (c1 & 0x3FF)) + 0x10000;
+        c = ((((c & 0x3FF) << 10) | (c1 & 0x3FF)) + 0x10000) | 0;
         out[--bytei] = 0x80 | (c & 0x3F);
         c >>= 6;
       case 3:
