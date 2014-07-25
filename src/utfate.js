@@ -21,6 +21,21 @@ utfate.SFCCA = /** @type {function(!Uint8Array): string} */
 
 
 /**
+ * String.fromCodePoint
+ * @param {number} cp
+ * @return {string}
+ */
+utfate.SFCP = String.fromCodePoint ||
+    function (cp) {
+      if (cp < 0x10000) {
+        return utfate.SFCC(cp);
+      } else {
+        cp -= 0x10000
+        return utfate.SFCC(0xD800 | (cp >> 10), 0xDC00 | (cp & 0x3FF));
+      }
+    };
+
+/**
  * @param {number} index
  * @param {number} bytes
  * @param {number=} opt_needed
@@ -203,6 +218,77 @@ utfate.decode = function(ib, opt_start, opt_end) {
       out += utfate.SFCC(c);
     }
   }
+  return out;
+};
+
+
+/**
+ * @type {number}
+ * @const
+ */
+utfate.UTF8_ACCEPT = 0;
+
+/**
+ * @type {number}
+ * @const
+ */
+utfate.UTF8_REJECT = 12;
+
+// Decoding table and automaton decode method from:
+// http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+/**
+ * @type {!Int8Array}
+ * @const
+ */
+utfate.DECODE_TABLE = new Int8Array(
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+     1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+     7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+     8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+     10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
+     // The second part is a transition table that maps a combination
+     // of a state of the automaton and a character class to a state.
+     0,12,24,36,60,96,84,12,12,12,48,72, 12,12,12,12,12,12,12,12,12,12,12,12,
+     12, 0,12,12,12,12,12, 0,12, 0,12,12, 12,24,12,12,12,12,12,24,12,24,12,12,
+     12,12,12,12,12,12,12,24,12,12,12,12, 12,24,12,12,12,12,12,12,12,24,12,12,
+     12,12,12,12,12,12,12,36,12,36,12,12, 12,36,12,12,12,12,12,36,12,36,12,12,
+     12,36,12,12,12,12,12,12,12,12,12,12]);
+
+/**
+ * Decode UTF-8 bytes to a string.
+ *
+ * @param {!Uint8Array} ib
+ * @param {number=} opt_start
+ * @param {number=} opt_end
+ * @return {string}
+ */
+utfate.decodeBH = function(ib, opt_start, opt_end) {
+  var i = opt_start || 0,
+      end = opt_end || ib.length,
+      state = utfate.UTF8_ACCEPT,
+      codep = 0, out = '';
+
+  while (i < end) {
+    var byte_ = ib[i], type = utfate.DECODE_TABLE[byte_];
+    switch (state) {
+      case utfate.UTF8_ACCEPT:
+        codep = (0xff >> type) & (byte_);
+        break;
+      case utfate.UTF8_REJECT:
+        utfate.throwDecodeError(i, byte_);
+        break;
+      default:
+        codep = (byte_ & 0x3f) | (codep << 6);
+        break;
+    }
+    state = utfate.DECODE_TABLE[256 + state + type];
+    if (state === utfate.UTF8_ACCEPT) {
+      out += utfate.SFCP(codep);
+    }
+    ++i;
   }
   return out;
 };
