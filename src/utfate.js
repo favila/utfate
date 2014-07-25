@@ -142,21 +142,18 @@ utfate.UTF8InvalidTailBits = function(c) {
  * @return {string}
  */
 utfate.decode = function(ib, opt_start, opt_end) {
-  var i = opt_start || 0, end = opt_end || ib.length,
-      ibi = 0, tail = 0,
-      ascii_start = i, c = 0, mask = 0,
+  var i = opt_start | 0, end = (opt_end || ib.length) | 0,
+      ibi = 0, tail = 0, c = 0, mask = 0,
       out = '';
 
   while (i < end) {
     ibi = ib[i];
-    // Fast-path for ascii. Will decode in bulk.
+    // Fast-path for ascii.
+    // Bulk-decoding (with SFCCA) is slower for typed arrays than char-at-a-time.
     if (ibi < 0x80) {
+      out += utfate.SFCC(ibi);
       ++i;
       continue;
-    }
-
-    if (ascii_start < i) {
-      out += utfate.SFCCA(ib.subarray(ascii_start, i));
     }
 
     tail = utfate.UTF8TailLen(ibi);
@@ -169,15 +166,15 @@ utfate.decode = function(ib, opt_start, opt_end) {
     switch (tail) {
       case 3:
         ibi = ib[++i];
-        c = (c << 6) + ibi;
+        c = ((c << 6) + ibi) | 0;
         mask = utfate.UTF8InvalidTailBits(ibi);
       case 2:
         ibi = ib[++i];
-        c = (c << 6) + ibi;
+        c = ((c << 6) + ibi) | 0;
         mask = (mask << 1) | utfate.UTF8InvalidTailBits(ibi);
       case 1:
         ibi = ib[++i];
-        c = (c << 6) + ibi;
+        c = ((c << 6) + ibi) | 0;
         mask = (mask << 1) | utfate.UTF8InvalidTailBits(ibi);
       case 0:
         ascii_start = ++i;
@@ -206,8 +203,6 @@ utfate.decode = function(ib, opt_start, opt_end) {
       out += utfate.SFCC(c);
     }
   }
-  if (ascii_start < i) {
-    out += utfate.SFCCA(ib.subarray(ascii_start, i));
   }
   return out;
 };
