@@ -141,7 +141,8 @@ utfate.decode = function(ib, opt_start, opt_end) {
   while (i < end) {
     ibi = ib[i];
     // Fast-path for ascii.
-    // Bulk-decoding (with SFCCA) is slower for typed arrays than char-at-a-time.
+    // Bulk-decoding (with String.fromCharCode.apply) is slower for typed arrays
+    // than char-at-a-time.
     // Cost seems to be the apply plus the typed array.
     if (ibi < 0x80) {
       out += String.fromCharCode(ibi);
@@ -170,7 +171,7 @@ utfate.decode = function(ib, opt_start, opt_end) {
         c = ((c << 6) + ibi) | 0;
         mask = (mask << 1) | utfate.UTF8InvalidTailBits(ibi);
       case 0:
-        ascii_start = ++i;
+        ++i;
         break;
       case -1:
         utfate.throwDecodeError(i, c);
@@ -426,11 +427,38 @@ utfate.throwEncodeError = function(index) {
 utfate.encode = function(s) {
   var out = new Uint8Array(utfate.byteLength(s)),
       result = utfate.encodeInto(s, out);
-  if (result.error) {
-    utfate.throwEncodeError(result.chars);
+  if (result['error']) {
+    utfate.throwEncodeError(result['chars']);
   }
   return out;
 };
+
+
+/**
+ * Encode string fully into a new Uint8Array as UTF8.
+ * May throw an Error if string is invalid UTF-16 and cannot be encoded.
+ * Use encode-into if you want to partially encode or want to provide an out
+ * buffer.
+ *
+ * @param {string} s
+ * @return {!Uint8Array} string encoded in UTF8.
+ */
+utfate.encode1Pass = function(s) {
+  // One utf-16 char can never produce more than 3 utf-8 bytes, so we allocate a
+  // buffer three times the string length so we know we'll have enough.
+  var maxblen = s.length * 3,
+      out = new Uint8Array(maxblen),
+      result = utfate.encodeInto(s, out);
+  if (result['error']) {
+    utfate.throwEncodeError(result['chars']);
+  }
+  if (result['bytes'] < maxblen) {
+    return new Uint8Array(out.buffer.slice(0, result['bytes']));
+  } else {
+    return out;
+  }
+};
+
 
 /**
  * @param {string} s
