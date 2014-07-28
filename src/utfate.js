@@ -6,11 +6,6 @@ goog.provide('utfate');
 
 goog.scope(function() {
 
-
-/** String.fromCharCode alias. */
-utfate.SFCC = String.fromCharCode;
-
-
 /**
  *  A String.fromCharCode whose input is an array.
  *  @param {!Uint8Array} ascii bytes only!
@@ -25,13 +20,13 @@ utfate.SFCCA = /** @type {function(!Uint8Array): string} */
  * @param {number} cp
  * @return {string}
  */
-utfate.SFCP = String.fromCodePoint ||
+utfate.SFCP = String['fromCodePoint'] ||
     function (cp) {
       if (cp < 0x10000) {
-        return utfate.SFCC(cp);
+        return String.fromCharCode(cp);
       } else {
         cp -= 0x10000
-        return utfate.SFCC(0xD800 | (cp >> 10), 0xDC00 | (cp & 0x3FF));
+        return String.fromCharCode(0xD800 | (cp >> 10), 0xDC00 | (cp & 0x3FF));
       }
     };
 
@@ -102,7 +97,7 @@ utfate.isNoncharacter = function(c) {
  * @param {number} c
  * @return {boolean}
  */
-utfate.isReserved = function(c) { return ((c & 0xfffe) == 0xfffe); };
+utfate.isReserved = function(c) { return ((c & 0xfffe) === 0xfffe); };
 
 
 /**
@@ -136,14 +131,7 @@ utfate.UTF8TailLen = function(c) {
  * @return {number}
  */
 utfate.UTF8InvalidTailBits = function(c) {
-  switch (c >> 6) {
-    case 0: case 1:
-      return 1;
-    case 2:
-      return 0;
-    case 3:
-      return 1;
-  }
+  return ((c >> 6) !== 2) | 0;
 };
 
 
@@ -166,7 +154,7 @@ utfate.decode = function(ib, opt_start, opt_end) {
     // Fast-path for ascii.
     // Bulk-decoding (with SFCCA) is slower for typed arrays than char-at-a-time.
     if (ibi < 0x80) {
-      out += utfate.SFCC(ibi);
+      out += String.fromCharCode(ibi);
       ++i;
       continue;
     }
@@ -213,9 +201,9 @@ utfate.decode = function(ib, opt_start, opt_end) {
 
     if (tail === 3) {
       c -= 0x10000;
-      out += utfate.SFCC(0xD800 | (c >> 10), 0xDC00 | (c & 0x3FF));
+      out += String.fromCharCode(0xD800 | (c >> 10), 0xDC00 | (c & 0x3FF));
     } else {
-      out += utfate.SFCC(c);
+      out += String.fromCharCode(c);
     }
   }
   return out;
@@ -327,10 +315,9 @@ utfate.encodeInto = function(string, out, opt_startchar, opt_endchar,
       bytei = opt_startbyte | 0,
       byteend = (opt_endbyte || out.length) | 0,
       bytesneeded = 0,
-      c = 0, c1 = 0,
-      CCA = String.prototype.charCodeAt.bind(string);
+      c = 0, c1 = 0;
   while (i < end) {
-    c = CCA(i);
+    c = string.charCodeAt(i);
     if (c < 0x80) {
       // Ascii fast-path
       if (byteend <= bytei) {
@@ -358,7 +345,7 @@ utfate.encodeInto = function(string, out, opt_startchar, opt_endchar,
     switch (bytesneeded) {
       case 4:
         // Convert to UTF32 because we need to add 0x10000 to the code point.
-        c1 = CCA(++i);
+        c1 = string.charCodeAt(++i);
         if ((c1 & 0xFC00) !== 0xDC00) {
           return utfate.encodeResult(i - 1, bytei - bytesneeded,
                                      utfate.ENCODINGERRORS.ORPHAN_LSUR);
@@ -430,6 +417,13 @@ utfate.byteLength = function(s) {
   return nbytes;
 };
 
+/**
+ * @param {number} index
+ */
+utfate.throwEncodeError = function(index) {
+  throw new Error('Cannot encode: invalid UTF-16 in input string near ' +
+                  'string index ' + index);
+};
 
 /**
  * Encode string fully into a new Uint8Array as UTF8.
@@ -444,8 +438,7 @@ utfate.encode = function(s) {
   var out = new Uint8Array(utfate.byteLength(s)),
       result = utfate.encodeInto(s, out);
   if (result.error) {
-    throw new Error('Cannot encode: invalid UTF-16 in input string near ' +
-                    'string index ' + result.chars);
+    utfate.throwEncodeError(result.chars);
   }
   return out;
 };
@@ -456,10 +449,9 @@ utfate.encode = function(s) {
  */
 utfate.encodeSimple = function(s) {
   var out = new Uint8Array(utfate.byteLength(s)),
-  CCA = String.prototype.charCodeAt.bind(s),
-  p = 0, slen = s.length | 0;
+  p = 0, slen = s.length;
   for (var i = 0; i < slen; ++i) {
-    var c = CCA(i) | 0;
+    var c = s.charCodeAt(i);
     if (c < 128) {
       out[p++] = c;
     } else if (c < 2048) {
@@ -480,18 +472,18 @@ utfate.encodeSimple = function(s) {
  * @return {string} 16-bit Unicode string.
  */
 utfate.decodeSimple = function(bytes) {
-  var out = '', pos = 0, blen = bytes.length | 0;
+  var out = '', pos = 0, blen = bytes.length;
   while (pos < blen) {
     var c1 = bytes[pos++];
     if (c1 < 128) {
-      out += utfate.SFCC(c1);
+      out += String.fromCharCode(c1);
     } else if (c1 > 191 && c1 < 224) {
       var c2 = bytes[pos++];
-      out += utfate.SFCC((c1 & 31) << 6 | c2 & 63);
+      out += String.fromCharCode((c1 & 31) << 6 | c2 & 63);
     } else {
       var c2 = bytes[pos++];
       var c3 = bytes[pos++];
-      out += utfate.SFCC((c1 & 15) << 12 | (c2 & 63) << 6 | c3 & 63);
+      out += String.fromCharCode((c1 & 15) << 12 | (c2 & 63) << 6 | c3 & 63);
     }
   }
   return out;
