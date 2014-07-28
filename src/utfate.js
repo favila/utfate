@@ -4,17 +4,6 @@
 goog.provide('utfate');
 
 
-goog.scope(function() {
-
-/**
- *  A String.fromCharCode whose input is an array.
- *  @param {!Uint8Array} ascii bytes only!
- *  @return {string}
- */
-utfate.SFCCA = /** @type {function(!Uint8Array): string} */
-    (Function.prototype.apply.bind(String.fromCharCode, null));
-
-
 /**
  * String.fromCodePoint
  * @param {number} cp
@@ -153,6 +142,7 @@ utfate.decode = function(ib, opt_start, opt_end) {
     ibi = ib[i];
     // Fast-path for ascii.
     // Bulk-decoding (with SFCCA) is slower for typed arrays than char-at-a-time.
+    // Cost seems to be the apply plus the typed array.
     if (ibi < 0x80) {
       out += String.fromCharCode(ibi);
       ++i;
@@ -367,8 +357,7 @@ utfate.encodeInto = function(string, out, opt_startchar, opt_endchar,
         ++i;
         break;
       case 0:
-        return utfate.encodeResult(i, bytei,
-                                   utfate.ENCODINGERRORS.ORPHAN_TSUR);
+        return utfate.encodeResult(i, bytei, utfate.ENCODINGERRORS.ORPHAN_TSUR);
     }
   }
   return utfate.encodeResult(i, bytei, utfate.ENCODINGERRORS.NONE);
@@ -488,5 +477,3 @@ utfate.decodeSimple = function(bytes) {
   }
   return out;
 };
-
-});  // goog.scope
